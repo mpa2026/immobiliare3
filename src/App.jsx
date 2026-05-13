@@ -5,28 +5,30 @@ const SUPABASE_URL = "https://svsyczdpwdpveqxpvsjr.supabase.co";
 const SUPABASE_KEY = "sb_publishable_fV1Ycrt8CsVEjOWyAhUFzg_3Rc7iLwb";
 
 // Client Supabase leggero (senza dipendenza npm)
-function supabase() {
-  const headers = {
+async function sbFetch(path, opts) {
+  const o = opts || {};
+  const headers = Object.assign({
     "Content-Type": "application/json",
     "apikey": SUPABASE_KEY,
-    "Authorization": `Bearer ${SUPABASE_KEY}`,
-  };
-
-  const rest = (path, opts = {}) =>
-    fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: { ...headers, ...opts.headers }, ...opts })
-      .then(r => r.json());
-
-  return {
-    from: (table) => ({
-      select:  (cols = "*")          => rest(`${table}?select=${cols}`, { method: "GET", headers: { "Prefer": "return=representation" } }),
-      insert:  (body)                => rest(`${table}`,               { method: "POST", body: JSON.stringify(body), headers: { "Prefer": "return=representation" } }),
-      update:  (body, match)         => rest(`${table}?${match}`,      { method: "PATCH", body: JSON.stringify(body), headers: { "Prefer": "return=representation" } }),
-      delete:  (match)               => rest(`${table}?${match}`,      { method: "DELETE", headers: { "Prefer": "return=representation" } }),
-      order:   (col, asc = true)     => rest(`${table}?select=*&order=${col}.${asc ? "asc" : "desc"}`, { method: "GET" }),
-    }),
-  };
+    "Authorization": "Bearer " + SUPABASE_KEY,
+    "Prefer": "return=representation",
+  }, o.headers || {});
+  const res = await fetch(SUPABASE_URL + "/rest/v1/" + path, Object.assign({}, o, { headers }));
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : [];
+  if (!res.ok) {
+    const msg = (data && data.message) || (data && data.error) || ("HTTP " + res.status);
+    throw new Error(msg);
+  }
+  return data;
 }
-const db = supabase();
+
+const db = {
+  select: function(table) { return sbFetch(table + "?select=*&order=created_at.desc"); },
+  insert: function(table, body) { return sbFetch(table, { method: "POST", body: JSON.stringify(body) }); },
+  update: function(table, body, id) { return sbFetch(table + "?id=eq." + id, { method: "PATCH", body: JSON.stringify(body) }); },
+  remove: function(table, id) { return sbFetch(table + "?id=eq." + id, { method: "DELETE" }); },
+};
 
 // ─── HOOKS ROBOTO + LEAFLET ───────────────────────────────────────────────────
 function useRoboto() {
@@ -300,8 +302,7 @@ function SezioneImmobili() {
   const carica = async () => {
     setLoading(true); setErrore(null);
     try {
-      const data = await db.from("immobili").order("created_at", false);
-      if (data.error) throw new Error(data.error.message);
+      const data = await db.select("immobili");
       setImmobili(Array.isArray(data) ? data : []);
     } catch(e) { setErrore(e.message); }
     finally { setLoading(false); }
@@ -330,9 +331,9 @@ function SezioneImmobili() {
         lng: f.lng ? Number(f.lng) : null,
       };
       if (modal === "nuovo") {
-        await db.from("immobili").insert(payload);
+        await db.insert("immobili", payload);
       } else {
-        await db.from("immobili").update(payload, `id=eq.${modal.id}`);
+        await db.update("immobili", payload, modal.id);
       }
       await carica();
       setModal(null);
@@ -343,7 +344,7 @@ function SezioneImmobili() {
   const elimina = async (id) => {
     if (!confirm("Eliminare questo immobile?")) return;
     try {
-      await db.from("immobili").delete(`id=eq.${id}`);
+      await db.remove("immobili", id);
       setImmobili(p => p.filter(i => i.id !== id));
     } catch(e) { setErrore(e.message); }
   };
@@ -433,8 +434,7 @@ function SezioneRichieste() {
   const carica = async () => {
     setLoading(true); setErrore(null);
     try {
-      const data = await db.from("richieste").order("created_at", false);
-      if (data.error) throw new Error(data.error.message);
+      const data = await db.select("richieste");
       setRichieste(Array.isArray(data) ? data : []);
     } catch(e) { setErrore(e.message); }
     finally { setLoading(false); }
@@ -457,8 +457,8 @@ function SezioneRichieste() {
         mq_min: f.mq_min||null, locali_min: f.locali_min||null,
         zone: f.zone||[], note: f.note||null,
       };
-      if (modal==="nuovo") await db.from("richieste").insert(payload);
-      else await db.from("richieste").update(payload, `id=eq.${modal.id}`);
+      if (modal==="nuovo") await db.insert("richieste", payload);
+      else await db.update("richieste", payload, modal.id);
       await carica();
       setModal(null);
     } catch(e) { setErrore(e.message); }
@@ -468,7 +468,7 @@ function SezioneRichieste() {
   const elimina = async (id) => {
     if (!confirm("Eliminare questa richiesta?")) return;
     try {
-      await db.from("richieste").delete(`id=eq.${id}`);
+      await db.remove("richieste", id);
       setRichieste(p => p.filter(r => r.id !== id));
     } catch(e) { setErrore(e.message); }
   };
@@ -548,8 +548,8 @@ function SezioneMatch() {
 
   useEffect(() => {
     Promise.all([
-      db.from("immobili").order("created_at", false),
-      db.from("richieste").order("created_at", false),
+      db.select("immobili"),
+      db.select("richieste"),
     ]).then(([imm, rich]) => {
       setImmobili(Array.isArray(imm) ? imm : []);
       setRichieste(Array.isArray(rich) ? rich : []);
@@ -642,7 +642,7 @@ function SezioneMappa() {
   const [fContr,   setFContr]   = useState("tutti");
 
   useEffect(() => {
-    db.from("immobili").order("created_at", false).then(data => {
+    db.select("immobili").then(data => {
       setImmobili(Array.isArray(data) ? data : []);
       setLoading(false);
     });
@@ -675,8 +675,8 @@ export default function App() {
   const [counts, setCounts] = useState({ disp:0, rich:0, nuovi:0 });
   useEffect(() => {
     Promise.all([
-      db.from("immobili").order("created_at", false),
-      db.from("richieste").order("created_at", false),
+      db.select("immobili"),
+      db.select("richieste"),
     ]).then(([imm, rich]) => {
       const immArr  = Array.isArray(imm)  ? imm  : [];
       const richArr = Array.isArray(rich) ? rich : [];
