@@ -4,6 +4,46 @@ import { useState, useEffect, useRef } from "react";
 const SUPABASE_URL = "https://svsyczdpwdpveqxpvsjr.supabase.co";
 const SUPABASE_KEY = "sb_publishable_fV1Ycrt8CsVEjOWyAhUFzg_3Rc7iLwb";
 
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+const AUTH_KEY = "imm_session";
+
+async function authSignIn(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || "Email o password errati");
+  const s = {
+    access_token:  data.access_token,
+    refresh_token: data.refresh_token,
+    email:         data.user?.email,
+    expires_at:    Date.now() + (data.expires_in * 1000),
+  };
+  localStorage.setItem(AUTH_KEY, JSON.stringify(s));
+  return s;
+}
+
+async function authSignOut(token) {
+  try {
+    await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
+    });
+  } catch {}
+  localStorage.removeItem(AUTH_KEY);
+}
+
+function getStoredSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem(AUTH_KEY));
+    if (!s?.access_token) return null;
+    if (s.expires_at && Date.now() > s.expires_at - 60000) return null;
+    return s;
+  } catch { return null; }
+}
+
 // Client Supabase leggero (senza dipendenza npm)
 async function sbFetch(path, opts) {
   const o = opts || {};
@@ -1322,11 +1362,71 @@ function SezioneMappa() {
   );
 }
 
+// ─── LOGIN ────────────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const [errore,   setErrore]   = useState(null);
+
+  const login = async (e) => {
+    e.preventDefault();
+    setLoading(true); setErrore(null);
+    try {
+      const s = await authSignIn(email, password);
+      onLogin(s);
+    } catch(err) {
+      setErrore(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0a1628",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Roboto',sans-serif",padding:20}}>
+      <div style={{background:"#0d1f3c",border:"1px solid #1e3a5f",borderRadius:16,padding:36,width:"100%",maxWidth:380}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{fontSize:44,marginBottom:10}}>🏛</div>
+          <h1 style={{fontSize:22,fontWeight:900,color:"#f1f5f9",margin:0}}>Immobiliare 3.0</h1>
+          <div style={{fontSize:12,color:"#475569",marginTop:4}}>Gestionale interno — accesso riservato</div>
+        </div>
+        {errore && (
+          <div style={{background:"#3b1515",border:"1px solid #7f1d1d",borderRadius:8,padding:"10px 14px",color:"#f87171",fontSize:13,marginBottom:18}}>
+            ⚠️ {errore}
+          </div>
+        )}
+        <form onSubmit={login}>
+          <div style={{marginBottom:14}}>
+            <label style={{display:"block",color:"#94a3b8",fontSize:11,textTransform:"uppercase",letterSpacing:"0.8px",marginBottom:5}}>Email</label>
+            <input style={inp} type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nome@email.com" autoFocus autoComplete="email"/>
+          </div>
+          <div style={{marginBottom:20}}>
+            <label style={{display:"block",color:"#94a3b8",fontSize:11,textTransform:"uppercase",letterSpacing:"0.8px",marginBottom:5}}>Password</label>
+            <input style={inp} type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password"/>
+          </div>
+          <button type="submit" disabled={loading||!email||!password}
+            style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:loading||!email||!password?"#1e3a5f":"#2563eb",color:loading||!email||!password?"#475569":"#fff",fontWeight:700,cursor:loading||!email||!password?"default":"pointer",fontSize:15,transition:"background .2s"}}>
+            {loading ? "⏳ Accesso in corso…" : "🔑 Accedi"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   useRoboto();
+  const [session, setSession] = useState(() => getStoredSession());
   const [tab, setTab] = useState("immobili");
   const [matchInitial, setMatchInitial] = useState(null);
+
+  if (!session) return <LoginScreen onLogin={setSession}/>;
+
+  const logout = async () => {
+    await authSignOut(session.access_token);
+    setSession(null);
+  };
 
   const goToMatch = (modo, sel) => {
     setMatchInitial({ modo, sel });
@@ -1366,13 +1466,17 @@ export default function App() {
               <h1 style={{fontSize:22,fontWeight:900,color:"#f1f5f9",margin:0}}>🏛 Immobiliare 3.0</h1>
               <div style={{fontSize:11,color:"#475569",marginTop:2}}>Gestionale interno</div>
             </div>
-            <div style={{display:"flex",gap:20}}>
+            <div style={{display:"flex",gap:20,alignItems:"center"}}>
               {[[counts.disp,"#4ade80","disponibili"],[counts.rich,"#93c5fd","richieste"],[counts.nuovi,"#fbbf24","nuovi lead"]].map(([n,c,l])=>(
                 <div key={l} style={{textAlign:"center"}}>
                   <div style={{fontSize:20,fontWeight:800,color:c}}>{n}</div>
                   <div style={{fontSize:10,color:"#475569"}}>{l}</div>
                 </div>
               ))}
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,paddingLeft:16,borderLeft:"1px solid #1e3a5f"}}>
+                <span style={{fontSize:11,color:"#475569"}}>👤 {session.email}</span>
+                <button onClick={logout} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#64748b",cursor:"pointer",fontSize:11,fontWeight:600}}>Esci</button>
+              </div>
             </div>
           </div>
           <div style={{display:"flex",gap:4,marginTop:12}}>
