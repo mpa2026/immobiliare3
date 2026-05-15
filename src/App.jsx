@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
 
 // ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://svsyczdpwdpveqxpvsjr.supabase.co";
@@ -69,6 +70,111 @@ const db = {
   update: function(table, body, id) { return sbFetch(table + "?id=eq." + id, { method: "PATCH", body: JSON.stringify(body) }); },
   remove: function(table, id) { return sbFetch(table + "?id=eq." + id, { method: "DELETE" }); },
 };
+
+// ─── EXCEL IMPORT / EXPORT ───────────────────────────────────────────────────
+const IMMOBILI_COLS = [
+  {key:"titolo",label:"Titolo"},{key:"tipo",label:"Tipo"},{key:"contratto",label:"Contratto"},
+  {key:"stato",label:"Stato"},{key:"comune",label:"Comune"},{key:"indirizzo",label:"Indirizzo"},
+  {key:"prezzo",label:"Prezzo"},{key:"mq",label:"Mq netti"},{key:"mq_commerciali",label:"Mq commerciali"},
+  {key:"locali",label:"Locali"},{key:"bagni",label:"Bagni"},{key:"piano",label:"Piano"},
+  {key:"ascensore",label:"Ascensore"},{key:"garage",label:"Garage"},
+  {key:"posti_coperti",label:"Posti coperti"},{key:"posti_scoperti",label:"Posti scoperti"},
+  {key:"proprietario_label",label:"Proprietario"},{key:"proprietario_telefono",label:"Tel proprietario"},
+  {key:"proprietario_email",label:"Email proprietario"},{key:"note_interne",label:"Note"},
+  {key:"agente",label:"Agente"},{key:"lat",label:"Lat"},{key:"lng",label:"Lng"},
+];
+
+const RICHIESTE_COLS = [
+  {key:"cliente_label",label:"Cliente"},{key:"telefono",label:"Telefono"},{key:"email",label:"Email"},
+  {key:"contratto",label:"Contratto"},{key:"tipo",label:"Tipo"},{key:"stato",label:"Stato"},
+  {key:"budget_min",label:"Budget min"},{key:"budget_max",label:"Budget max"},
+  {key:"mq_min",label:"Mq min"},{key:"locali_min",label:"Locali min"},
+  {key:"zone",label:"Zone"},{key:"note",label:"Note"},{key:"agente",label:"Agente"},{key:"data_richiesta",label:"Data richiesta"},
+];
+
+function exportXLSX(rows, cols, filename) {
+  const data = rows.map(r => {
+    const obj = {};
+    cols.forEach(c => {
+      const v = r[c.key];
+      obj[c.label] = Array.isArray(v) ? v.join("; ") : (v ?? "");
+    });
+    return obj;
+  });
+  const ws = XLSX.utils.json_to_sheet(data, { header: cols.map(c => c.label) });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Dati");
+  XLSX.writeFile(wb, filename);
+}
+
+function parseXLSX(file, cols) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        const labelToKey = Object.fromEntries(cols.map(c => [c.label, c.key]));
+        const mapped = rows.map(row => {
+          const obj = {};
+          Object.entries(row).forEach(([h, v]) => {
+            const k = labelToKey[h.trim()];
+            if (k) obj[k] = v === null || v === undefined ? "" : String(v);
+          });
+          return obj;
+        }).filter(obj => Object.values(obj).some(v => v !== ""));
+        resolve(mapped);
+      } catch(e) { reject(e); }
+    };
+    reader.onerror = () => reject(new Error("Errore lettura file"));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function csvRowToImmobile(r) {
+  const bool = v => v === "true" || v === "Sì" || v === "1";
+  const num  = v => v !== "" && v != null ? Number(v) : null;
+  return {
+    titolo: r.titolo || "", tipo: r.tipo || "appartamento",
+    contratto: r.contratto || "vendita", stato: r.stato || "disponibile",
+    comune: r.comune || "", indirizzo: r.indirizzo || "",
+    prezzo: Number(r.prezzo) || 0,
+    mq: Number(r.mq) || 0, mq_commerciali: num(r.mq_commerciali),
+    locali: num(r.locali), bagni: num(r.bagni),
+    piano: r.piano || null, ascensore: bool(r.ascensore),
+    garage: num(r.garage), posti_coperti: num(r.posti_coperti), posti_scoperti: num(r.posti_scoperti),
+    proprietario_label: r.proprietario_label || null,
+    proprietario_telefono: r.proprietario_telefono || null,
+    proprietario_email: r.proprietario_email || null,
+    note_interne: r.note_interne || null,
+    agente: r.agente || null,
+    lat: num(r.lat), lng: num(r.lng),
+  };
+}
+
+function excelDateToISO(v) {
+  if (!v && v !== 0) return null;
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+  const n = Number(v);
+  if (!isNaN(n) && n > 0) return new Date((n - 25569) * 86400 * 1000).toISOString().slice(0, 10);
+  return null;
+}
+
+function csvRowToRichiesta(r) {
+  const num = v => v !== "" && v != null ? Number(v) : null;
+  return {
+    cliente_label: r.cliente_label || "", telefono: r.telefono || null,
+    email: r.email || null, contratto: r.contratto || "vendita",
+    tipo: r.tipo || null, stato: r.stato || "nuovo_contatto",
+    budget_min: Number(r.budget_min) || 0, budget_max: Number(r.budget_max) || 0,
+    mq_min: num(r.mq_min), locali_min: num(r.locali_min),
+    zone: r.zone ? r.zone.split(";").map(z => z.trim()).filter(Boolean) : [],
+    note: r.note || null,
+    agente: r.agente || null,
+    data_richiesta: excelDateToISO(r.data_richiesta),
+  };
+}
 
 // ─── HOOKS ROBOTO + LEAFLET ───────────────────────────────────────────────────
 function useRoboto() {
@@ -618,7 +724,7 @@ function FormImm({ data={}, onSave, onClose, saving }) {
     piano:"", ascensore:false,
     garage:"", posti_coperti:"", posti_scoperti:"",
     proprietario_label:"", proprietario_telefono:"", proprietario_email:"",
-    note_interne:"", lat:"", lng:"",
+    note_interne:"", lat:"", lng:"", agente:"",
     ...data
   });
   const [geoLoading, setGeoLoading] = useState(false);
@@ -733,6 +839,7 @@ function FormImm({ data={}, onSave, onClose, saving }) {
       <div style={{gridColumn:"1/-1"}}><Field label="Proprietario"><input style={inp} value={f.proprietario_label} onChange={e=>s("proprietario_label",e.target.value)}/></Field></div>
       <Field label="Tel. proprietario"><input style={inp} type="tel" value={f.proprietario_telefono} onChange={e=>s("proprietario_telefono",e.target.value)} placeholder="+39 …"/></Field>
       <Field label="Email proprietario"><input style={inp} type="email" value={f.proprietario_email} onChange={e=>s("proprietario_email",e.target.value)}/></Field>
+      <div style={{gridColumn:"1/-1"}}><Field label="Agente"><input style={inp} value={f.agente||""} onChange={e=>s("agente",e.target.value)} placeholder="Nome agente responsabile"/></Field></div>
       <div style={{gridColumn:"1/-1"}}><Field label="Note interne (opzionale)"><textarea style={{...inp,resize:"vertical",minHeight:70}} value={f.note_interne} onChange={e=>s("note_interne",e.target.value)}/></Field></div>
     </div>
     <div style={{display:"flex",gap:10,marginTop:8,justifyContent:"flex-end"}}>
@@ -750,7 +857,7 @@ function FormRich({ data={}, onSave, onClose, saving }) {
     cliente_label:"", telefono:"", email:"", contratto:"vendita", tipo:"",
     budget_min:"", budget_max:"", mq_min:"", mq_commerciali_min:"", locali_min:"", bagni_min:"",
     ascensore:null, garage_min:"", posti_coperti_min:"", posti_scoperti_min:"",
-    zone:"", stato:"nuovo_contatto", note:"", data_richiesta:"",
+    zone:"", stato:"nuovo_contatto", note:"", data_richiesta:"", agente:"",
     ...data,
     zone: Array.isArray(data.zone) ? data.zone.join(", ") : (data.zone||"")
   });
@@ -800,6 +907,7 @@ function FormRich({ data={}, onSave, onClose, saving }) {
       <Field label="Posti coperti min"><input style={inp} type="number" min="0" value={f.posti_coperti_min} onChange={e=>s("posti_coperti_min",e.target.value)}/></Field>
       <Field label="Posti scoperti min"><input style={inp} type="number" min="0" value={f.posti_scoperti_min} onChange={e=>s("posti_scoperti_min",e.target.value)}/></Field>
       <Field label="Data richiesta"><input style={inp} type="date" value={f.data_richiesta||""} onChange={e=>s("data_richiesta",e.target.value)}/></Field>
+      <Field label="Agente"><input style={inp} value={f.agente||""} onChange={e=>s("agente",e.target.value)} placeholder="Nome agente responsabile"/></Field>
       <div style={{gridColumn:"1/-1"}}><Field label="Zone preferite (virgola)"><input style={inp} value={f.zone} onChange={e=>s("zone",e.target.value)} placeholder="Es. Treviso, Villorba"/></Field></div>
       <div style={{gridColumn:"1/-1"}}><Field label="Note"><textarea style={{...inp,resize:"vertical",minHeight:70}} value={f.note} onChange={e=>s("note",e.target.value)}/></Field></div>
     </div>
@@ -821,11 +929,21 @@ function SezioneImmobili({ onMatch }) {
   const [search,   setSearch]   = useState("");
   const [fStato,   setFStato]   = useState("tutti");
   const [fContr,   setFContr]   = useState("tutti");
+  const [fAgente,  setFAgente]  = useState("tutti");
   const [vista,    setVista]    = useState("lista");
   const [modal,    setModal]    = useState(null);
   const [sortBy,   setSortBy]   = useState("");
   const [sortDir,  setSortDir]  = useState("asc");
   const [dettaglio, setDettaglio] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
+  const [importConflict, setImportConflict] = useState(null);
+  const [selezione, setSelezione] = useState(new Set());
+  const importRef = useRef(null);
+
+  const toggleSel = (id, e) => { e.stopPropagation(); setSelezione(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; }); };
+  const selTutti  = () => setSelezione(new Set(sorted.map(i => i.id)));
+  const deselTutti = () => setSelezione(new Set());
 
   const carica = async () => {
     setLoading(true); setErrore(null);
@@ -837,12 +955,15 @@ function SezioneImmobili({ onMatch }) {
   };
   useEffect(() => { carica(); }, []);
 
+  const agentiImm = [...new Set(immobili.map(i => i.agente).filter(Boolean))].sort();
+
   const filtered = immobili.filter(i => {
     const q = search.toLowerCase();
     const prop = (i.proprietario_label||"").toLowerCase();
     return (!q || i.titolo.toLowerCase().includes(q) || i.comune.toLowerCase().includes(q) || prop.includes(q))
       && (fStato==="tutti" || i.stato===fStato)
-      && (fContr==="tutti" || i.contratto===fContr);
+      && (fContr==="tutti" || i.contratto===fContr)
+      && (fAgente==="tutti" || i.agente===fAgente);
   });
 
   const sorted = sortBy ? [...filtered].sort((a, b) => {
@@ -873,6 +994,7 @@ function SezioneImmobili({ onMatch }) {
         posti_coperti: Number(f.posti_coperti)||null,
         posti_scoperti: Number(f.posti_scoperti)||null,
         note_interne: f.note_interne||null,
+        agente: f.agente||null,
         lat: f.lat ? Number(f.lat) : null,
         lng: f.lng ? Number(f.lng) : null,
       };
@@ -895,6 +1017,56 @@ function SezioneImmobili({ onMatch }) {
     } catch(e) { setErrore(e.message); }
   };
 
+  const eliminaSelezionati = async () => {
+    if (!confirm(`Eliminare ${selezione.size} immobili selezionati?`)) return;
+    try {
+      await Promise.all([...selezione].map(id => db.remove("immobili", id)));
+      setImmobili(p => p.filter(i => !selezione.has(i.id)));
+      setSelezione(new Set());
+    } catch(e) { setErrore(e.message); }
+  };
+
+  const handleExport = () => {
+    const date = new Date().toISOString().slice(0,10);
+    exportXLSX(immobili, IMMOBILI_COLS, `immobili_${date}.xlsx`);
+  };
+
+  const eseguiImportImm = async (rows) => {
+    setImportConflict(null);
+    setImporting(true); setImportMsg(null);
+    let ok = 0, fail = 0, firstErr = null;
+    for (const row of rows) {
+      try { await db.insert("immobili", csvRowToImmobile(row)); ok++; }
+      catch(err) { fail++; if (!firstErr) firstErr = err.message; }
+    }
+    await carica();
+    setImporting(false);
+    setImportMsg({ ok, fail, firstErr });
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true); setImportMsg(null); setImportConflict(null);
+    try {
+      const rows = await parseXLSX(file, IMMOBILI_COLS);
+      if (!rows.length) throw new Error("Nessuna riga valida trovata nel file");
+      const titoli = new Set(immobili.map(i => (i.titolo||"").toLowerCase()));
+      const nuovi = rows.filter(r => !titoli.has((r.titolo||"").toLowerCase()));
+      const duplicati = rows.filter(r => titoli.has((r.titolo||"").toLowerCase()));
+      setImporting(false);
+      if (duplicati.length > 0) {
+        setImportConflict({ nuovi, duplicati, tutti: rows });
+      } else {
+        await eseguiImportImm(rows);
+      }
+    } catch(e) {
+      setImportMsg({ error: e.message });
+      setImporting(false);
+    }
+  };
+
   const btn = (active, label, onClick) => (
     <button onClick={onClick} style={{ padding:"8px 16px", border:"none", background:active?"#2563eb":"none", color:active?"#fff":"#64748b", fontWeight:active?700:400, cursor:"pointer", fontSize:13, transition:"all .2s" }}>{label}</button>
   );
@@ -902,10 +1074,33 @@ function SezioneImmobili({ onMatch }) {
   return (
     <div>
       {errore && <Errore msg={errore} onRetry={carica}/>}
+      {importConflict && (
+        <div style={{marginBottom:12,padding:"14px 16px",borderRadius:8,background:"#1e2a3a",border:"1px solid #2563eb",fontSize:13}}>
+          <div style={{color:"#93c5fd",fontWeight:700,marginBottom:8}}>⚠️ Trovati {importConflict.duplicati.length} duplicati — {importConflict.nuovi.length} nuovi</div>
+          <div style={{color:"#94a3b8",marginBottom:12,fontSize:12}}>{importConflict.duplicati.length} immobili nel file hanno lo stesso titolo di immobili già presenti. Cosa vuoi fare?</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>eseguiImportImm(importConflict.tutti)} style={{padding:"7px 14px",borderRadius:6,border:"none",background:"#2563eb",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:12}}>Importa tutti ({importConflict.tutti.length})</button>
+            <button onClick={()=>eseguiImportImm(importConflict.nuovi)} disabled={!importConflict.nuovi.length} style={{padding:"7px 14px",borderRadius:6,border:"1px solid #334155",background:"none",color:importConflict.nuovi.length?"#4ade80":"#475569",fontWeight:700,cursor:importConflict.nuovi.length?"pointer":"default",fontSize:12}}>Salta duplicati ({importConflict.nuovi.length} nuovi)</button>
+            <button onClick={()=>setImportConflict(null)} style={{padding:"7px 14px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:12}}>Annulla</button>
+          </div>
+        </div>
+      )}
+      {importMsg && (
+        <div style={{marginBottom:12,padding:"10px 14px",borderRadius:8,fontSize:13,
+          background: importMsg.error ? "#3b1515" : "#0d3320",
+          border: `1px solid ${importMsg.error ? "#7f1d1d" : "#166534"}`,
+          color: importMsg.error ? "#f87171" : "#4ade80",
+          display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span>{importMsg.error ? `Errore: ${importMsg.error}` : `Importati ${importMsg.ok} immobili${importMsg.fail ? `, ${importMsg.fail} errori` : ""}${importMsg.firstErr ? ` — ${importMsg.firstErr}` : ""}`}</span>
+          <button onClick={()=>setImportMsg(null)} style={{background:"none",border:"none",color:"inherit",cursor:"pointer",fontSize:16,lineHeight:1}}>✕</button>
+        </div>
+      )}
+      <input ref={importRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={handleImport}/>
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Cerca immobile, comune, proprietario…" style={{...inp,flex:1,minWidth:200}}/>
         <select value={fContr} onChange={e=>setFContr(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti i contratti</option><option value="vendita">Vendita</option><option value="affitto">Affitto</option></select>
         <select value={fStato} onChange={e=>setFStato(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti gli stati</option><option value="disponibile">Disponibile</option><option value="trattativa">Trattativa</option><option value="venduto">Venduto/Affittato</option><option value="ritirato">Ritirato</option><option value="collaborazione">Collaborazione</option><option value="scovato">Scovato</option></select>
+        {agentiImm.length>0 && <select value={fAgente} onChange={e=>setFAgente(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti gli agenti</option>{agentiImm.map(a=><option key={a} value={a}>{a}</option>)}</select>}
         <div style={{display:"flex",gap:0,background:"#1e293b",border:"1px solid #334155",borderRadius:8,overflow:"hidden"}}>
           <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{...sel,border:"none",borderRadius:0,background:"transparent",paddingRight:8}}>
             <option value="">Ordina per…</option>
@@ -925,23 +1120,40 @@ function SezioneImmobili({ onMatch }) {
           {btn(vista==="lista","☰ Lista",()=>setVista("lista"))}
           {btn(vista==="mappa","🗺 Mappa",()=>setVista("mappa"))}
         </div>
+        <button onClick={handleExport} disabled={!immobili.length} title="Scarica tutti gli immobili come CSV" style={{padding:"9px 14px",borderRadius:8,border:"1px solid #334155",background:"none",color:"#94a3b8",fontWeight:600,cursor:immobili.length?"pointer":"default",opacity:immobili.length?1:0.4,whiteSpace:"nowrap",fontSize:13}}>↓ Esporta Excel</button>
+        <button onClick={()=>importRef.current?.click()} disabled={importing} title="Importa immobili da CSV" style={{padding:"9px 14px",borderRadius:8,border:"1px solid #334155",background:"none",color:importing?"#475569":"#94a3b8",fontWeight:600,cursor:importing?"default":"pointer",whiteSpace:"nowrap",fontSize:13}}>{importing?"⏳ Importazione…":"↑ Importa Excel"}</button>
         <button onClick={()=>setModal("nuovo")} style={{padding:"9px 18px",borderRadius:8,border:"none",background:"#15803d",color:"#fff",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>+ Nuovo immobile</button>
       </div>
 
       {loading ? <Spinner testo="Caricamento immobili…"/> : (
         <>
-          <div style={{color:"#64748b",fontSize:12,marginBottom:14}}>{sorted.length} immobili trovati</div>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+            <span style={{color:"#64748b",fontSize:12}}>{sorted.length} immobili trovati</span>
+            {selezione.size > 0 && <>
+              <span style={{fontSize:12,color:"#93c5fd",fontWeight:600}}>{selezione.size} selezionati</span>
+              <button onClick={selTutti} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",cursor:"pointer"}}>Seleziona tutti</button>
+              <button onClick={deselTutti} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",cursor:"pointer"}}>Deseleziona tutti</button>
+              <button onClick={eliminaSelezionati} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #7f1d1d",background:"#3b1515",color:"#f87171",cursor:"pointer",fontWeight:700}}>🗑 Elimina selezionati ({selezione.size})</button>
+            </>}
+          </div>
           {vista==="lista" ? (
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
-              {sorted.map(imm=>(
-                <div key={imm.id} style={{background:"#1e293b",borderRadius:12,border:"1px solid #334155",overflow:"hidden",transition:"border-color .2s",cursor:"pointer"}}
+              {sorted.map(imm=>{
+                const sel = selezione.has(imm.id);
+                return (
+                <div key={imm.id} style={{background:"#1e293b",borderRadius:12,border:`1px solid ${sel?"#2563eb":"#334155"}`,overflow:"hidden",transition:"border-color .2s",cursor:"pointer"}}
                   onClick={()=>setDettaglio(imm)}
-                  onMouseEnter={e=>e.currentTarget.style.borderColor="#4b6a8a"}
-                  onMouseLeave={e=>e.currentTarget.style.borderColor="#334155"}>
+                  onMouseEnter={e=>{ if(!sel) e.currentTarget.style.borderColor="#4b6a8a"; }}
+                  onMouseLeave={e=>{ if(!sel) e.currentTarget.style.borderColor="#334155"; }}>
                   <div style={{padding:"14px 16px",borderBottom:"1px solid #334155",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                    <div>
-                      <div style={{fontSize:16,color:"#f1f5f9",fontWeight:700,marginBottom:4}}>{TIPO_ICON[imm.tipo]} {imm.titolo}</div>
-                      <div style={{fontSize:12,color:"#64748b"}}>{imm.indirizzo}, {imm.comune}</div>
+                    <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                      <div onClick={e=>toggleSel(imm.id,e)} style={{marginTop:3,width:18,height:18,borderRadius:4,border:`2px solid ${sel?"#2563eb":"#475569"}`,background:sel?"#2563eb":"transparent",flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        {sel && <span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
+                      </div>
+                      <div>
+                        <div style={{fontSize:16,color:"#f1f5f9",fontWeight:700,marginBottom:4}}>{TIPO_ICON[imm.tipo]} {imm.titolo}</div>
+                        <div style={{fontSize:12,color:"#64748b"}}>{imm.indirizzo}, {imm.comune}</div>
+                      </div>
                     </div>
                     <Badge stato={imm.stato} map={STATO_C}/>
                   </div>
@@ -961,7 +1173,8 @@ function SezioneImmobili({ onMatch }) {
                       </div>
                       <span style={{background:imm.contratto==="affitto"?"#2e1a47":"#1e3a5f",color:imm.contratto==="affitto"?"#c084fc":"#93c5fd",padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:700}}>{imm.contratto.toUpperCase()}</span>
                     </div>
-                    {imm.proprietario_label&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>👤 {imm.proprietario_label}</div>}
+                    {imm.proprietario_label&&<div style={{fontSize:12,color:"#64748b",marginBottom:4}}>👤 {imm.proprietario_label}</div>}
+                    {imm.agente&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>🧑‍💼 {imm.agente}</div>}
                     {imm.note_interne&&<div style={{fontSize:11,color:"#475569",background:"#162032",borderRadius:6,padding:"6px 10px",marginBottom:10}}>📝 {imm.note_interne}</div>}
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                       <button onClick={(e)=>{e.stopPropagation();setModal(imm)}} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>✏️ Modifica</button>
@@ -969,7 +1182,7 @@ function SezioneImmobili({ onMatch }) {
                     </div>
                   </div>
                 </div>
-              ))}
+              );})}
             </div>
           ) : (
             <><Legenda/><MappaImmobili immobili={sorted} h={520} onSelect={setDettaglio}/></>
@@ -998,10 +1211,20 @@ function SezioneRichieste({ onMatch }) {
   const [saving,    setSaving]    = useState(false);
   const [search,    setSearch]    = useState("");
   const [fStato,    setFStato]    = useState("tutti");
+  const [fAgente,   setFAgente]   = useState("tutti");
   const [fDataDa,   setFDataDa]   = useState("");
   const [fDataA,    setFDataA]    = useState("");
   const [modal,     setModal]     = useState(null);
   const [dettaglio, setDettaglio] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
+  const [importConflict, setImportConflict] = useState(null);
+  const [selezione, setSelezione] = useState(new Set());
+  const importRef = useRef(null);
+
+  const toggleSel = (id, e) => { e.stopPropagation(); setSelezione(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; }); };
+  const selTutti   = () => setSelezione(new Set(filtered.map(r => r.id)));
+  const deselTutti = () => setSelezione(new Set());
 
   const carica = async () => {
     setLoading(true); setErrore(null);
@@ -1013,10 +1236,13 @@ function SezioneRichieste({ onMatch }) {
   };
   useEffect(() => { carica(); }, []);
 
+  const agentiRich = [...new Set(richieste.map(r => r.agente).filter(Boolean))].sort();
+
   const filtered = richieste.filter(r => {
     const q = search.toLowerCase();
     return (!q || (r.cliente_label||"").toLowerCase().includes(q) || (r.telefono||"").includes(q))
       && (fStato==="tutti" || r.stato===fStato)
+      && (fAgente==="tutti" || r.agente===fAgente)
       && (!fDataDa || (r.data_richiesta && r.data_richiesta >= fDataDa))
       && (!fDataA  || (r.data_richiesta && r.data_richiesta <= fDataA));
   }).sort((a, b) => {
@@ -1033,12 +1259,10 @@ function SezioneRichieste({ onMatch }) {
         cliente_label: f.cliente_label, telefono: f.telefono||null, email: f.email||null,
         contratto: f.contratto, tipo: f.tipo||null, stato: f.stato,
         budget_min: f.budget_min||0, budget_max: f.budget_max||0,
-        mq_min: f.mq_min||null, mq_commerciali_min: f.mq_commerciali_min||null,
-        locali_min: f.locali_min||null, bagni_min: f.bagni_min||null,
-        ascensore: f.ascensore != null ? f.ascensore : null,
-        garage_min: f.garage_min||null, posti_coperti_min: f.posti_coperti_min||null,
-        posti_scoperti_min: f.posti_scoperti_min||null,
+        mq_min: f.mq_min||null,
+        locali_min: f.locali_min||null,
         zone: f.zone||[], note: f.note||null,
+        agente: f.agente||null,
         ...(f.data_richiesta ? { data_richiesta: f.data_richiesta } : {}),
       };
       if (modal==="nuovo") await db.insert("richieste", payload);
@@ -1057,12 +1281,85 @@ function SezioneRichieste({ onMatch }) {
     } catch(e) { setErrore(e.message); }
   };
 
+  const eliminaSelezionati = async () => {
+    if (!confirm(`Eliminare ${selezione.size} richieste selezionate?`)) return;
+    try {
+      await Promise.all([...selezione].map(id => db.remove("richieste", id)));
+      setRichieste(p => p.filter(r => !selezione.has(r.id)));
+      setSelezione(new Set());
+    } catch(e) { setErrore(e.message); }
+  };
+
+  const handleExport = () => {
+    const date = new Date().toISOString().slice(0,10);
+    exportXLSX(richieste, RICHIESTE_COLS, `richieste_${date}.xlsx`);
+  };
+
+  const eseguiImportRich = async (rows) => {
+    setImportConflict(null);
+    setImporting(true); setImportMsg(null);
+    let ok = 0, fail = 0, firstErr = null;
+    for (const row of rows) {
+      try { await db.insert("richieste", csvRowToRichiesta(row)); ok++; }
+      catch(err) { fail++; if (!firstErr) firstErr = err.message; }
+    }
+    await carica();
+    setImporting(false);
+    setImportMsg({ ok, fail, firstErr });
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true); setImportMsg(null); setImportConflict(null);
+    try {
+      const rows = await parseXLSX(file, RICHIESTE_COLS);
+      if (!rows.length) throw new Error("Nessuna riga valida trovata nel file");
+      const chiavi = new Set(richieste.map(r => `${(r.cliente_label||"").toLowerCase()}|${r.telefono||""}`));
+      const nuovi = rows.filter(r => !chiavi.has(`${(r.cliente_label||"").toLowerCase()}|${r.telefono||""}`));
+      const duplicati = rows.filter(r => chiavi.has(`${(r.cliente_label||"").toLowerCase()}|${r.telefono||""}`));
+      setImporting(false);
+      if (duplicati.length > 0) {
+        setImportConflict({ nuovi, duplicati, tutti: rows });
+      } else {
+        await eseguiImportRich(rows);
+      }
+    } catch(e) {
+      setImportMsg({ error: e.message });
+      setImporting(false);
+    }
+  };
+
   return (
     <div>
       {errore && <Errore msg={errore} onRetry={carica}/>}
+      {importConflict && (
+        <div style={{marginBottom:12,padding:"14px 16px",borderRadius:8,background:"#1e2a3a",border:"1px solid #7c3aed",fontSize:13}}>
+          <div style={{color:"#c4b5fd",fontWeight:700,marginBottom:8}}>⚠️ Trovati {importConflict.duplicati.length} duplicati — {importConflict.nuovi.length} nuovi</div>
+          <div style={{color:"#94a3b8",marginBottom:12,fontSize:12}}>{importConflict.duplicati.length} richieste nel file hanno lo stesso cliente e telefono di richieste già presenti. Cosa vuoi fare?</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>eseguiImportRich(importConflict.tutti)} style={{padding:"7px 14px",borderRadius:6,border:"none",background:"#7c3aed",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:12}}>Importa tutte ({importConflict.tutti.length})</button>
+            <button onClick={()=>eseguiImportRich(importConflict.nuovi)} disabled={!importConflict.nuovi.length} style={{padding:"7px 14px",borderRadius:6,border:"1px solid #334155",background:"none",color:importConflict.nuovi.length?"#4ade80":"#475569",fontWeight:700,cursor:importConflict.nuovi.length?"pointer":"default",fontSize:12}}>Salta duplicati ({importConflict.nuovi.length} nuove)</button>
+            <button onClick={()=>setImportConflict(null)} style={{padding:"7px 14px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:12}}>Annulla</button>
+          </div>
+        </div>
+      )}
+      {importMsg && (
+        <div style={{marginBottom:12,padding:"10px 14px",borderRadius:8,fontSize:13,
+          background: importMsg.error ? "#3b1515" : "#0d3320",
+          border: `1px solid ${importMsg.error ? "#7f1d1d" : "#166534"}`,
+          color: importMsg.error ? "#f87171" : "#4ade80",
+          display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span>{importMsg.error ? `Errore: ${importMsg.error}` : `Importate ${importMsg.ok} richieste${importMsg.fail ? `, ${importMsg.fail} errori` : ""}${importMsg.firstErr ? ` — ${importMsg.firstErr}` : ""}`}</span>
+          <button onClick={()=>setImportMsg(null)} style={{background:"none",border:"none",color:"inherit",cursor:"pointer",fontSize:16,lineHeight:1}}>✕</button>
+        </div>
+      )}
+      <input ref={importRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={handleImport}/>
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Cerca cliente o telefono…" style={{...inp,flex:1,minWidth:200}}/>
         <select value={fStato} onChange={e=>setFStato(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti gli stati</option><option value="nuovo_contatto">Nuovo contatto</option><option value="in_valutazione">In valutazione</option><option value="proposta_fatta">Proposta fatta</option><option value="chiuso">Chiuso</option></select>
+        {agentiRich.length>0 && <select value={fAgente} onChange={e=>setFAgente(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti gli agenti</option>{agentiRich.map(a=><option key={a} value={a}>{a}</option>)}</select>}
         <div style={{display:"flex",alignItems:"center",gap:6,background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"0 10px",height:38}}>
           <span style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap"}}>Dal</span>
           <input type="date" value={fDataDa} onChange={e=>setFDataDa(e.target.value)} style={{...inp,border:"none",padding:"4px",background:"transparent",width:130,fontSize:13}}/>
@@ -1070,23 +1367,40 @@ function SezioneRichieste({ onMatch }) {
           <input type="date" value={fDataA} onChange={e=>setFDataA(e.target.value)} style={{...inp,border:"none",padding:"4px",background:"transparent",width:130,fontSize:13}}/>
           {(fDataDa||fDataA)&&<button onClick={()=>{setFDataDa("");setFDataA("");}} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:14,padding:"0 2px"}} title="Azzera date">✕</button>}
         </div>
+        <button onClick={handleExport} disabled={!richieste.length} title="Scarica tutte le richieste come CSV" style={{padding:"9px 14px",borderRadius:8,border:"1px solid #334155",background:"none",color:"#94a3b8",fontWeight:600,cursor:richieste.length?"pointer":"default",opacity:richieste.length?1:0.4,whiteSpace:"nowrap",fontSize:13}}>↓ Esporta Excel</button>
+        <button onClick={()=>importRef.current?.click()} disabled={importing} title="Importa richieste da CSV" style={{padding:"9px 14px",borderRadius:8,border:"1px solid #334155",background:"none",color:importing?"#475569":"#94a3b8",fontWeight:600,cursor:importing?"default":"pointer",whiteSpace:"nowrap",fontSize:13}}>{importing?"⏳ Importazione…":"↑ Importa Excel"}</button>
         <button onClick={()=>setModal("nuovo")} style={{padding:"9px 18px",borderRadius:8,border:"none",background:"#7c3aed",color:"#fff",fontWeight:700,cursor:"pointer"}}>+ Nuova richiesta</button>
       </div>
       {loading ? <Spinner testo="Caricamento richieste…"/> : (
         <>
-          <div style={{color:"#64748b",fontSize:12,marginBottom:14}}>{filtered.length} richieste trovate</div>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+            <span style={{color:"#64748b",fontSize:12}}>{filtered.length} richieste trovate</span>
+            {selezione.size > 0 && <>
+              <span style={{fontSize:12,color:"#93c5fd",fontWeight:600}}>{selezione.size} selezionate</span>
+              <button onClick={selTutti} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",cursor:"pointer"}}>Seleziona tutte</button>
+              <button onClick={deselTutti} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",cursor:"pointer"}}>Deseleziona tutte</button>
+              <button onClick={eliminaSelezionati} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #7f1d1d",background:"#3b1515",color:"#f87171",cursor:"pointer",fontWeight:700}}>🗑 Elimina selezionate ({selezione.size})</button>
+            </>}
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
-            {filtered.map(r=>(
-              <div key={r.id} style={{background:"#1e293b",borderRadius:12,border:"1px solid #334155",overflow:"hidden",cursor:"pointer"}}
+            {filtered.map(r=>{
+              const sel = selezione.has(r.id);
+              return (
+              <div key={r.id} style={{background:"#1e293b",borderRadius:12,border:`1px solid ${sel?"#7c3aed":"#334155"}`,overflow:"hidden",cursor:"pointer"}}
                 onClick={()=>setDettaglio(r)}
-                onMouseEnter={e=>e.currentTarget.style.borderColor="#4b3a6a"}
-                onMouseLeave={e=>e.currentTarget.style.borderColor="#334155"}>
+                onMouseEnter={e=>{ if(!sel) e.currentTarget.style.borderColor="#4b3a6a"; }}
+                onMouseLeave={e=>{ if(!sel) e.currentTarget.style.borderColor="#334155"; }}>
                 <div style={{padding:"14px 16px",borderBottom:"1px solid #334155",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div>
-                    <div style={{fontSize:16,color:"#f1f5f9",fontWeight:700,marginBottom:4}}>👤 {r.cliente_label}</div>
-                    <div style={{fontSize:12,color:"#64748b"}}>
-                      📞 {r.telefono}{r.email&&` · ✉️ ${r.email}`}
-                      {r.data_richiesta&&<span style={{marginLeft:8,color:"#475569"}}>· 📅 {new Date(r.data_richiesta).toLocaleDateString("it-IT")}</span>}
+                  <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                    <div onClick={e=>toggleSel(r.id,e)} style={{marginTop:3,width:18,height:18,borderRadius:4,border:`2px solid ${sel?"#7c3aed":"#475569"}`,background:sel?"#7c3aed":"transparent",flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {sel && <span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
+                    </div>
+                    <div>
+                      <div style={{fontSize:16,color:"#f1f5f9",fontWeight:700,marginBottom:4}}>👤 {r.cliente_label}</div>
+                      <div style={{fontSize:12,color:"#64748b"}}>
+                        📞 {r.telefono}{r.email&&` · ✉️ ${r.email}`}
+                        {r.data_richiesta&&<span style={{marginLeft:8,color:"#475569"}}>· 📅 {new Date(r.data_richiesta).toLocaleDateString("it-IT")}</span>}
+                      </div>
                     </div>
                   </div>
                   <Badge stato={r.stato} map={RICH_C}/>
@@ -1104,6 +1418,7 @@ function SezioneRichieste({ onMatch }) {
                     </div>
                   </div>
                   {r.zone?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>{r.zone.map(z=><span key={z} style={{background:"#1e293b",border:"1px solid #334155",color:"#94a3b8",padding:"2px 8px",borderRadius:999,fontSize:11}}>📍 {z}</span>)}</div>}
+                  {r.agente&&<div style={{fontSize:12,color:"#64748b",marginBottom:6}}>🧑‍💼 {r.agente}</div>}
                   {r.note&&<div style={{fontSize:11,color:"#475569",background:"#162032",borderRadius:6,padding:"6px 10px",marginBottom:10}}>📝 {r.note}</div>}
                   <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                     <button onClick={(e)=>{e.stopPropagation();setModal(r)}} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>✏️ Modifica</button>
@@ -1111,7 +1426,7 @@ function SezioneRichieste({ onMatch }) {
                   </div>
                 </div>
               </div>
-            ))}
+            );})}
           </div>
         </>
       )}
@@ -1421,21 +1736,10 @@ export default function App() {
   const [tab, setTab] = useState("immobili");
   const [matchInitial, setMatchInitial] = useState(null);
 
-  if (!session) return <LoginScreen onLogin={setSession}/>;
-
-  const logout = async () => {
-    await authSignOut(session.access_token);
-    setSession(null);
-  };
-
-  const goToMatch = (modo, sel) => {
-    setMatchInitial({ modo, sel });
-    setTab("match");
-  };
-
-  // Contatori header (caricati una volta)
+  // Contatori header (caricati una volta) — hook PRIMA del return condizionale
   const [counts, setCounts] = useState({ disp:0, rich:0, nuovi:0 });
   useEffect(() => {
+    if (!session) return;
     Promise.all([
       db.select("immobili"),
       db.select("richieste"),
@@ -1448,7 +1752,19 @@ export default function App() {
         nuovi: richArr.filter(r=>r.stato==="nuovo_contatto").length,
       });
     });
-  }, [tab]); // aggiorna i contatori ogni volta che si cambia tab
+  }, [session, tab]);
+
+  if (!session) return <LoginScreen onLogin={setSession}/>;
+
+  const logout = async () => {
+    await authSignOut(session.access_token);
+    setSession(null);
+  };
+
+  const goToMatch = (modo, sel) => {
+    setMatchInitial({ modo, sel });
+    setTab("match");
+  };
 
   const tabs = [
     {id:"immobili", label:"🏠 Immobili",  col:"#15803d"},
