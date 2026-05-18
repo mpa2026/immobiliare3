@@ -724,7 +724,7 @@ function FormImm({ data={}, onSave, onClose, saving }) {
     piano:"", ascensore:false,
     garage:"", posti_coperti:"", posti_scoperti:"",
     proprietario_label:"", proprietario_telefono:"", proprietario_email:"",
-    note_interne:"", lat:"", lng:"", agente:"",
+    note_interne:"", lat:"", lng:"", agente:"", link_annuncio:"",
     ...data
   });
   const [geoLoading, setGeoLoading] = useState(false);
@@ -841,6 +841,7 @@ function FormImm({ data={}, onSave, onClose, saving }) {
       <Field label="Email proprietario"><input style={inp} type="email" value={f.proprietario_email} onChange={e=>s("proprietario_email",e.target.value)}/></Field>
       <div style={{gridColumn:"1/-1"}}><Field label="Agente"><input style={inp} value={f.agente||""} onChange={e=>s("agente",e.target.value)} placeholder="Nome agente responsabile"/></Field></div>
       <div style={{gridColumn:"1/-1"}}><Field label="Note interne (opzionale)"><textarea style={{...inp,resize:"vertical",minHeight:70}} value={f.note_interne} onChange={e=>s("note_interne",e.target.value)}/></Field></div>
+      <div style={{gridColumn:"1/-1"}}><Field label="Link annuncio (opzionale)"><input style={inp} type="url" value={f.link_annuncio||""} onChange={e=>s("link_annuncio",e.target.value)} placeholder="https://…"/></Field></div>
     </div>
     <div style={{display:"flex",gap:10,marginTop:8,justifyContent:"flex-end"}}>
       <button onClick={onClose} disabled={saving} style={{padding:"9px 20px",borderRadius:8,border:"1px solid #334155",background:"none",color:"#94a3b8",cursor:"pointer"}}>Annulla</button>
@@ -997,6 +998,7 @@ function SezioneImmobili({ onMatch }) {
         agente: f.agente||null,
         lat: f.lat ? Number(f.lat) : null,
         lng: f.lng ? Number(f.lng) : null,
+        link_annuncio: f.link_annuncio||null,
       };
       if (modal === "nuovo") {
         await db.insert("immobili", payload);
@@ -1177,6 +1179,8 @@ function SezioneImmobili({ onMatch }) {
                     {imm.agente&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>🧑‍💼 {imm.agente}</div>}
                     {imm.note_interne&&<div style={{fontSize:11,color:"#475569",background:"#162032",borderRadius:6,padding:"6px 10px",marginBottom:10}}>📝 {imm.note_interne}</div>}
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                      {imm.link_annuncio && <a href={imm.link_annuncio} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #065f46",background:"none",color:"#34d399",fontSize:12,cursor:"pointer",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>🏠 Annuncio</a>}
+                      <div style={{flex:1}}/>
                       <button onClick={(e)=>{e.stopPropagation();setModal(imm)}} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>✏️ Modifica</button>
                       <button onClick={(e)=>{e.stopPropagation();elimina(imm.id)}} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #4b1818",background:"none",color:"#f87171",fontSize:12,cursor:"pointer"}}>🗑 Elimina</button>
                     </div>
@@ -1701,7 +1705,7 @@ function LoginScreen({ onLogin }) {
     <div style={{minHeight:"100vh",background:"#0a1628",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Roboto',sans-serif",padding:20}}>
       <div style={{background:"#0d1f3c",border:"1px solid #1e3a5f",borderRadius:16,padding:36,width:"100%",maxWidth:380}}>
         <div style={{textAlign:"center",marginBottom:28}}>
-          <div style={{fontSize:44,marginBottom:10}}>🏛</div>
+          <img src="/logo.png" alt="Logo" style={{height:80,width:"auto",marginBottom:10}}/>
           <h1 style={{fontSize:22,fontWeight:900,color:"#f1f5f9",margin:0}}>Immobiliare 3.0</h1>
           <div style={{fontSize:12,color:"#475569",marginTop:4}}>Gestionale interno — accesso riservato</div>
         </div>
@@ -1779,8 +1783,13 @@ export default function App() {
         <div style={{maxWidth:1200,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 0 0"}}>
             <div>
-              <h1 style={{fontSize:22,fontWeight:900,color:"#f1f5f9",margin:0}}>🏛 Immobiliare 3.0</h1>
-              <div style={{fontSize:11,color:"#475569",marginTop:2}}>Gestionale interno</div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <img src="/logo.png" alt="Logo" style={{height:44,width:"auto"}}/>
+                <div>
+                  <h1 style={{fontSize:22,fontWeight:900,color:"#f1f5f9",margin:0}}>Immobiliare 3.0</h1>
+                  <div style={{fontSize:11,color:"#475569",marginTop:2}}>Gestionale interno</div>
+                </div>
+              </div>
             </div>
             <div style={{display:"flex",gap:20,alignItems:"center"}}>
               {[[counts.disp,"#4ade80","disponibili"],[counts.rich,"#93c5fd","richieste"],[counts.nuovi,"#fbbf24","nuovi lead"]].map(([n,c,l])=>(
