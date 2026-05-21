@@ -48,10 +48,12 @@ function getStoredSession() {
 // Client Supabase leggero (senza dipendenza npm)
 async function sbFetch(path, opts) {
   const o = opts || {};
+  const session = getStoredSession();
+  const token = session?.access_token || SUPABASE_KEY;
   const headers = Object.assign({
     "Content-Type": "application/json",
     "apikey": SUPABASE_KEY,
-    "Authorization": "Bearer " + SUPABASE_KEY,
+    "Authorization": "Bearer " + token,
     "Prefer": "return=representation",
   }, o.headers || {});
   const res = await fetch(SUPABASE_URL + "/rest/v1/" + path, Object.assign({}, o, { headers }));
