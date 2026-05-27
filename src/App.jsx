@@ -217,7 +217,21 @@ const RICH_C = {
   proposta_fatta: { bg:"#3b1f0a", text:"#fb923c", label:"Proposta fatta" },
   chiuso:         { bg:"#3b1515", text:"#f87171", label:"Chiuso" },
 };
-const TIPO_ICON = { appartamento:"🏢", villa:"🏡", bifamiliare:"🏘️", trifamiliare:"🏘️", schiera:"🏠", ufficio:"🏛️", negozio:"🏪", capannone:"🏗️", terreno:"🌿", altro:"📦" };
+const TIPO_ICON = { appartamento:"🏢", villa:"🏡", bifamiliare:"🏘️", trifamiliare:"🏘️", schiera:"🏠", ufficio:"🏛️", negozio:"🏪", capannone:"🏗️", terreno:"🌿", intero_edificio:"🏬", altro:"📦" };
+const CE_COLOR = {
+  A4: { bg:"#4a4a4a", text:"#ffffff" },
+  A3: { bg:"#1a7a72", text:"#ffffff" },
+  A2: { bg:"#2d6e45", text:"#ffffff" },
+  A1: { bg:"#52b043", text:"#ffffff" },
+  B:  { bg:"#a8d44d", text:"#1a1a1a" },
+  C:  { bg:"#f5e642", text:"#1a1a1a" },
+  D:  { bg:"#f5a623", text:"#1a1a1a" },
+  E:  { bg:"#e8751a", text:"#ffffff" },
+  F:  { bg:"#c87941", text:"#ffffff" },
+  G:  { bg:"#e02020", text:"#ffffff" },
+  ASSENTE:       { bg:"#334155", text:"#94a3b8" },
+  "NON NECESSARIO": { bg:"#334155", text:"#94a3b8" },
+};
 const inp = { width:"100%", background:"#1e293b", border:"1px solid #334155", borderRadius:8, padding:"9px 12px", color:"#e2e8f0", fontSize:14, outline:"none", boxSizing:"border-box" };
 const sel = { ...inp, cursor:"pointer" };
 
@@ -727,6 +741,7 @@ function FormImm({ data={}, onSave, onClose, saving }) {
     garage:"", posti_coperti:"", posti_scoperti:"",
     proprietario_label:"", proprietario_telefono:"", proprietario_email:"",
     note_interne:"", lat:"", lng:"", agente:"", link_annuncio:"",
+    classe_energetica:"", data_acquisizione:"",
     ...data
   });
   const [geoLoading, setGeoLoading] = useState(false);
@@ -766,7 +781,7 @@ function FormImm({ data={}, onSave, onClose, saving }) {
       <div style={{gridColumn:"1/-1"}}><Field label="Titolo"><input style={inp} value={f.titolo} onChange={e=>s("titolo",e.target.value)} placeholder="Es. Bilocale Centro Treviso"/></Field></div>
       <div style={{gridColumn:"1/-1"}}><Field label="Stato"><select style={sel} value={f.stato} onChange={e=>s("stato",e.target.value)}><option value="disponibile">Disponibile</option><option value="trattativa">Trattativa in corso</option><option value="venduto">Venduto/Affittato</option><option value="ritirato">Ritirato</option><option value="collaborazione">Collaborazione</option><option value="scovato">Scovato</option></select></Field></div>
       <Field label="Tipo"><select style={sel} value={f.tipo} onChange={e=>s("tipo",e.target.value)}>
-        {[["appartamento","Appartamento"],["villa","Villa"],["bifamiliare","Abitazione bifamiliare"],["trifamiliare","Abitazione trifamiliare"],["schiera","Abitazione a schiera"],["ufficio","Ufficio"],["negozio","Negozio"],["capannone","Capannone"],["terreno","Terreno"],["altro","Altro"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+        {[["appartamento","Appartamento"],["villa","Villa"],["bifamiliare","Abitazione bifamiliare"],["trifamiliare","Abitazione trifamiliare"],["schiera","Abitazione a schiera"],["ufficio","Ufficio"],["negozio","Negozio"],["capannone","Capannone"],["terreno","Terreno"],["intero_edificio","Intero edificio"],["altro","Altro"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
       </select></Field>
       <Field label="Contratto"><select style={sel} value={f.contratto} onChange={e=>s("contratto",e.target.value)}><option value="vendita">Vendita</option><option value="affitto">Affitto</option></select></Field>
       <Field label="Comune"><input style={inp} value={f.comune} onChange={e=>{s("comune",e.target.value);setGeoStatus(null);}}/></Field>
@@ -775,6 +790,11 @@ function FormImm({ data={}, onSave, onClose, saving }) {
       <Field label="Mq commerciali"><input style={inp} type="number" value={f.mq_commerciali} onChange={e=>s("mq_commerciali",e.target.value)}/></Field>
       <Field label="Locali"><input style={inp} type="number" value={f.locali} onChange={e=>s("locali",e.target.value)}/></Field>
       <Field label="Bagni"><input style={inp} type="number" value={f.bagni} onChange={e=>s("bagni",e.target.value)}/></Field>
+      <Field label="Classe energetica"><select style={sel} value={f.classe_energetica||""} onChange={e=>s("classe_energetica",e.target.value)}>
+        <option value="">— Seleziona —</option>
+        {["A4","A3","A2","A1","B","C","D","E","F","G","ASSENTE","NON NECESSARIO"].map(v=><option key={v} value={v}>{v}</option>)}
+      </select></Field>
+      <Field label="Data acquisizione"><input style={inp} type="date" value={f.data_acquisizione||""} onChange={e=>s("data_acquisizione",e.target.value)}/></Field>
       <Field label={f.contratto==="affitto"?"Canone €/mese":"Prezzo €"}><input style={inp} type="number" value={f.prezzo} onChange={e=>s("prezzo",e.target.value)}/></Field>
       <Field label="Piano"><input style={inp} value={f.piano} onChange={e=>s("piano",e.target.value)} placeholder="Es. 2, PT, S1…"/></Field>
       <Field label="Ascensore">
@@ -888,7 +908,7 @@ function FormRich({ data={}, onSave, onClose, saving }) {
       <Field label="Contratto"><select style={sel} value={f.contratto} onChange={e=>s("contratto",e.target.value)}><option value="vendita">Vendita</option><option value="affitto">Affitto</option></select></Field>
       <Field label="Tipo immobile"><select style={sel} value={f.tipo} onChange={e=>s("tipo",e.target.value)}>
         <option value="">Qualsiasi</option>
-        {[["appartamento","Appartamento"],["villa","Villa"],["bifamiliare","Abitazione bifamiliare"],["trifamiliare","Abitazione trifamiliare"],["schiera","Abitazione a schiera"],["ufficio","Ufficio"],["negozio","Negozio"],["capannone","Capannone"],["terreno","Terreno"],["altro","Altro"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+        {[["appartamento","Appartamento"],["villa","Villa"],["bifamiliare","Abitazione bifamiliare"],["trifamiliare","Abitazione trifamiliare"],["schiera","Abitazione a schiera"],["ufficio","Ufficio"],["negozio","Negozio"],["capannone","Capannone"],["terreno","Terreno"],["intero_edificio","Intero edificio"],["altro","Altro"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
       </select></Field>
       <Field label="Budget min €"><input style={inp} type="number" value={f.budget_min} onChange={e=>s("budget_min",e.target.value)}/></Field>
       <Field label="Budget max €"><input style={inp} type="number" value={f.budget_max} onChange={e=>s("budget_max",e.target.value)}/></Field>
@@ -1001,6 +1021,8 @@ function SezioneImmobili({ onMatch }) {
         lat: f.lat ? Number(f.lat) : null,
         lng: f.lng ? Number(f.lng) : null,
         link_annuncio: f.link_annuncio||null,
+        classe_energetica: f.classe_energetica||null,
+        data_acquisizione: f.data_acquisizione||null,
       };
       if (modal === "nuovo") {
         await db.insert("immobili", payload);
@@ -1177,6 +1199,7 @@ function SezioneImmobili({ onMatch }) {
                       </div>
                       <span style={{background:imm.contratto==="affitto"?"#2e1a47":"#1e3a5f",color:imm.contratto==="affitto"?"#c084fc":"#93c5fd",padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:700}}>{imm.contratto.toUpperCase()}</span>
                     </div>
+                    {imm.classe_energetica&&(()=>{const c=CE_COLOR[imm.classe_energetica]||{bg:"#334155",text:"#fff"};return<div style={{display:"inline-flex",alignItems:"center",gap:5,background:c.bg,borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700,color:c.text,marginBottom:8}}>⚡ {imm.classe_energetica}</div>})()}
                     {imm.proprietario_label&&<div style={{fontSize:12,color:"#64748b",marginBottom:4}}>👤 {imm.proprietario_label}</div>}
                     {imm.agente&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>🧑‍💼 {imm.agente}</div>}
                     {imm.note_interne&&<div style={{fontSize:11,color:"#475569",background:"#162032",borderRadius:6,padding:"6px 10px",marginBottom:10}}>📝 {imm.note_interne}</div>}
