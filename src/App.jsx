@@ -167,7 +167,7 @@ function csvRowToRichiesta(r) {
   const num = v => v !== "" && v != null ? Number(v) : null;
   return {
     cliente_label: r.cliente_label || "", telefono: r.telefono || null,
-    email: r.email || null, contratto: r.contratto || "vendita",
+    email: r.email || null, contratto: r.contratto || "acquisto",
     tipo: r.tipo || null, stato: r.stato || "nuovo_contatto",
     budget_min: Number(r.budget_min) || 0, budget_max: Number(r.budget_max) || 0,
     mq_min: num(r.mq_min), locali_min: num(r.locali_min),
@@ -413,7 +413,7 @@ function ModalDettaglioRich({ rich, onClose, onEdit, onDelete, onMatch }) {
 
       <div style={{background:"#162032",borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <span style={{background:rich.contratto==="affitto"?"#2e1a47":"#1e3a5f",color:rich.contratto==="affitto"?"#c084fc":"#93c5fd",padding:"6px 16px",borderRadius:999,fontSize:13,fontWeight:700}}>
-          {rich.contratto.toUpperCase()}
+          {rich.contratto==="acquisto"?"ACQUISTO":rich.contratto==="affitto"?"AFFITTO":rich.contratto.toUpperCase()}
         </span>
         {rich.tipo && (
           <span style={{background:"#1e2a1e",color:"#4ade80",padding:"6px 16px",borderRadius:999,fontSize:13,fontWeight:700}}>
@@ -877,7 +877,7 @@ function FormImm({ data={}, onSave, onClose, saving }) {
 // ─── FORM RICHIESTA ───────────────────────────────────────────────────────────
 function FormRich({ data={}, onSave, onClose, saving }) {
   const [f,setF] = useState({
-    cliente_label:"", telefono:"", email:"", contratto:"vendita", tipo:"",
+    cliente_label:"", telefono:"", email:"", contratto:"acquisto", tipo:"",
     budget_min:"", budget_max:"", mq_min:"", mq_commerciali_min:"", locali_min:"", bagni_min:"",
     ascensore:null, garage_min:"", posti_coperti_min:"", posti_scoperti_min:"",
     zone:"", stato:"nuovo_contatto", note:"", data_richiesta:"", agente:"",
@@ -905,7 +905,7 @@ function FormRich({ data={}, onSave, onClose, saving }) {
       <div style={{gridColumn:"1/-1"}}><Field label="Stato"><select style={sel} value={f.stato} onChange={e=>s("stato",e.target.value)}><option value="nuovo_contatto">Nuovo contatto</option><option value="in_valutazione">In valutazione</option><option value="proposta_fatta">Proposta fatta</option><option value="chiuso">Chiuso</option></select></Field></div>
       <Field label="Telefono"><input style={inp} value={f.telefono} onChange={e=>s("telefono",e.target.value)}/></Field>
       <Field label="Email (opzionale)"><input style={inp} value={f.email} onChange={e=>s("email",e.target.value)}/></Field>
-      <Field label="Contratto"><select style={sel} value={f.contratto} onChange={e=>s("contratto",e.target.value)}><option value="vendita">Vendita</option><option value="affitto">Affitto</option></select></Field>
+      <Field label="Contratto"><select style={sel} value={f.contratto} onChange={e=>s("contratto",e.target.value)}><option value="acquisto">Acquisto</option><option value="affitto">Affitto</option></select></Field>
       <Field label="Tipo immobile"><select style={sel} value={f.tipo} onChange={e=>s("tipo",e.target.value)}>
         <option value="">Qualsiasi</option>
         {[["appartamento","Appartamento"],["villa","Villa"],["bifamiliare","Abitazione bifamiliare"],["trifamiliare","Abitazione trifamiliare"],["schiera","Abitazione a schiera"],["ufficio","Ufficio"],["negozio","Negozio"],["capannone","Capannone"],["terreno","Terreno"],["intero_edificio","Intero edificio"],["altro","Altro"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
@@ -1233,6 +1233,56 @@ function SezioneImmobili({ onMatch }) {
 }
 
 // ─── SEZIONE RICHIESTE ────────────────────────────────────────────────────────
+function RigaRichiesta({ r, sel, onToggleSel, onDettaglio, onModifica, onElimina }) {
+  const [aperto, setAperto] = useState(false);
+  const budgetLabel = r.budget_max
+    ? `€ ${Number(r.budget_max).toLocaleString("it-IT")}`
+    : r.budget_min ? `da € ${Number(r.budget_min).toLocaleString("it-IT")}` : "—";
+  return (
+    <div style={{background:aperto?"#162032":"#1e293b",borderRadius:8,border:`1px solid ${sel?"#7c3aed":aperto?"#334155":"#1e293b"}`,overflow:"hidden",transition:"background .15s"}}>
+      <div style={{display:"grid",gridTemplateColumns:"28px 1fr 90px 90px 130px 110px 90px 24px",gap:8,padding:"10px 12px",cursor:"pointer",alignItems:"center"}}
+        onClick={()=>setAperto(v=>!v)}>
+        <div onClick={e=>{e.stopPropagation();onToggleSel(e);}} style={{width:16,height:16,borderRadius:3,border:`2px solid ${sel?"#7c3aed":"#475569"}`,background:sel?"#7c3aed":"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          {sel&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
+        </div>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:13,color:"#f1f5f9",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>👤 {r.cliente_label}</div>
+          <div style={{fontSize:11,color:"#64748b"}}>{r.telefono||""}{r.data_richiesta?" · 📅 "+new Date(r.data_richiesta).toLocaleDateString("it-IT"):""}</div>
+        </div>
+        <span style={{background:r.contratto==="affitto"?"#2e1a47":"#1e3a5f",color:r.contratto==="affitto"?"#c084fc":"#93c5fd",padding:"2px 7px",borderRadius:999,fontSize:10,fontWeight:700,textAlign:"center",whiteSpace:"nowrap"}}>
+          {r.contratto==="acquisto"?"ACQUISTO":r.contratto==="affitto"?"AFFITTO":r.contratto.toUpperCase()}
+        </span>
+        <div style={{fontSize:12,color:"#4ade80",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.tipo?`${TIPO_ICON[r.tipo]||""} ${r.tipo}`:"—"}</div>
+        <div style={{fontSize:12,color:"#fbbf24",fontWeight:700}}>{budgetLabel}</div>
+        <Badge stato={r.stato} map={RICH_C}/>
+        <div style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.agente||"—"}</div>
+        <div style={{fontSize:13,color:"#475569",textAlign:"right"}}>{aperto?"▲":"▼"}</div>
+      </div>
+      {aperto && (
+        <div style={{borderTop:"1px solid #1e293b",padding:"12px 16px",background:"#0f172a"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:12}}>
+            {r.email&&<div><span style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Email</span><div style={{fontSize:12,color:"#e2e8f0"}}>✉️ {r.email}</div></div>}
+            {r.budget_min>0&&<div><span style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Budget min</span><div style={{fontSize:12,color:"#e2e8f0",fontWeight:600}}>€ {Number(r.budget_min).toLocaleString("it-IT")}</div></div>}
+            {r.budget_max>0&&<div><span style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Budget max</span><div style={{fontSize:12,color:"#fbbf24",fontWeight:700}}>€ {Number(r.budget_max).toLocaleString("it-IT")}</div></div>}
+            {r.mq_min>0&&<div><span style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Mq min</span><div style={{fontSize:12,color:"#e2e8f0"}}>{r.mq_min} mq</div></div>}
+            {r.locali_min>0&&<div><span style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Locali min</span><div style={{fontSize:12,color:"#e2e8f0"}}>{r.locali_min}</div></div>}
+            {r.bagni_min>0&&<div><span style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Bagni min</span><div style={{fontSize:12,color:"#e2e8f0"}}>{r.bagni_min}</div></div>}
+            {r.ascensore!=null&&<div><span style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Ascensore</span><div style={{fontSize:12,color:r.ascensore?"#4ade80":"#f87171"}}>{r.ascensore?"✓ Richiesto":"✗ Non richiesto"}</div></div>}
+            {r.garage_min>0&&<div><span style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Garage min</span><div style={{fontSize:12,color:"#e2e8f0"}}>{r.garage_min}</div></div>}
+          </div>
+          {r.zone?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>{r.zone.map(z=><span key={z} style={{background:"#1e293b",border:"1px solid #334155",color:"#94a3b8",padding:"2px 8px",borderRadius:999,fontSize:11}}>📍 {z}</span>)}</div>}
+          {r.note&&<div style={{fontSize:12,color:"#94a3b8",background:"#1e293b",borderRadius:6,padding:"8px 12px",marginBottom:10}}>📝 {r.note}</div>}
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={e=>{e.stopPropagation();onDettaglio();}} style={{padding:"5px 12px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>🔍 Dettaglio</button>
+            <button onClick={e=>{e.stopPropagation();onModifica();}} style={{padding:"5px 12px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>✏️ Modifica</button>
+            <button onClick={e=>{e.stopPropagation();onElimina();}} style={{padding:"5px 12px",borderRadius:6,border:"1px solid #4b1818",background:"none",color:"#f87171",fontSize:12,cursor:"pointer"}}>🗑 Elimina</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SezioneRichieste({ onMatch }) {
   const [richieste, setRichieste] = useState([]);
   const [loading,   setLoading]   = useState(true);
@@ -1241,6 +1291,9 @@ function SezioneRichieste({ onMatch }) {
   const [search,    setSearch]    = useState("");
   const [fStato,    setFStato]    = useState("tutti");
   const [fAgente,   setFAgente]   = useState("tutti");
+  const [fContr,    setFContr]    = useState("tutti");
+  const [fTipo,     setFTipo]     = useState("tutti");
+  const [fComune,   setFComune]   = useState("tutti");
   const [fDataDa,   setFDataDa]   = useState("");
   const [fDataA,    setFDataA]    = useState("");
   const [modal,     setModal]     = useState(null);
@@ -1266,12 +1319,16 @@ function SezioneRichieste({ onMatch }) {
   useEffect(() => { carica(); }, []);
 
   const agentiRich = [...new Set(richieste.map(r => r.agente).filter(Boolean))].sort();
+  const comuniRich = [...new Set(richieste.flatMap(r => r.zone?.length ? r.zone : []).filter(Boolean))].sort();
 
   const filtered = richieste.filter(r => {
     const q = search.toLowerCase();
     return (!q || (r.cliente_label||"").toLowerCase().includes(q) || (r.telefono||"").includes(q))
       && (fStato==="tutti" || r.stato===fStato)
       && (fAgente==="tutti" || r.agente===fAgente)
+      && (fContr==="tutti" || r.contratto===fContr)
+      && (fTipo==="tutti" || r.tipo===fTipo)
+      && (fComune==="tutti" || r.zone?.includes(fComune))
       && (!fDataDa || (r.data_richiesta && r.data_richiesta >= fDataDa))
       && (!fDataA  || (r.data_richiesta && r.data_richiesta <= fDataA));
   }).sort((a, b) => {
@@ -1387,6 +1444,9 @@ function SezioneRichieste({ onMatch }) {
       <input ref={importRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={handleImport}/>
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Cerca cliente o telefono…" style={{...inp,flex:1,minWidth:200}}/>
+        <select value={fContr} onChange={e=>setFContr(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti i contratti</option><option value="acquisto">Acquisto</option><option value="affitto">Affitto</option></select>
+        <select value={fTipo} onChange={e=>setFTipo(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti i tipi</option>{[["appartamento","Appartamento"],["villa","Villa"],["bifamiliare","Bifamiliare"],["trifamiliare","Trifamiliare"],["schiera","A schiera"],["ufficio","Ufficio"],["negozio","Negozio"],["capannone","Capannone"],["terreno","Terreno"],["intero_edificio","Intero edificio"],["altro","Altro"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+        {comuniRich.length>0 && <select value={fComune} onChange={e=>setFComune(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutte le zone</option>{comuniRich.map(c=><option key={c} value={c}>{c}</option>)}</select>}
         <select value={fStato} onChange={e=>setFStato(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti gli stati</option><option value="nuovo_contatto">Nuovo contatto</option><option value="in_valutazione">In valutazione</option><option value="proposta_fatta">Proposta fatta</option><option value="chiuso">Chiuso</option></select>
         {agentiRich.length>0 && <select value={fAgente} onChange={e=>setFAgente(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti gli agenti</option>{agentiRich.map(a=><option key={a} value={a}>{a}</option>)}</select>}
         <div style={{display:"flex",alignItems:"center",gap:6,background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"0 10px",height:38}}>
@@ -1411,51 +1471,21 @@ function SezioneRichieste({ onMatch }) {
               <button onClick={eliminaSelezionati} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #7f1d1d",background:"#3b1515",color:"#f87171",cursor:"pointer",fontWeight:700}}>🗑 Elimina selezionate ({selezione.size})</button>
             </>}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
-            {filtered.map(r=>{
-              const sel = selezione.has(r.id);
-              return (
-              <div key={r.id} style={{background:"#1e293b",borderRadius:12,border:`1px solid ${sel?"#7c3aed":"#334155"}`,overflow:"hidden",cursor:"pointer"}}
-                onClick={()=>setDettaglio(r)}
-                onMouseEnter={e=>{ if(!sel) e.currentTarget.style.borderColor="#4b3a6a"; }}
-                onMouseLeave={e=>{ if(!sel) e.currentTarget.style.borderColor="#334155"; }}>
-                <div style={{padding:"14px 16px",borderBottom:"1px solid #334155",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-                    <div onClick={e=>toggleSel(r.id,e)} style={{marginTop:3,width:18,height:18,borderRadius:4,border:`2px solid ${sel?"#7c3aed":"#475569"}`,background:sel?"#7c3aed":"transparent",flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      {sel && <span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
-                    </div>
-                    <div>
-                      <div style={{fontSize:16,color:"#f1f5f9",fontWeight:700,marginBottom:4}}>👤 {r.cliente_label}</div>
-                      <div style={{fontSize:12,color:"#64748b"}}>
-                        📞 {r.telefono}{r.email&&` · ✉️ ${r.email}`}
-                        {r.data_richiesta&&<span style={{marginLeft:8,color:"#475569"}}>· 📅 {new Date(r.data_richiesta).toLocaleDateString("it-IT")}</span>}
-                      </div>
-                    </div>
-                  </div>
-                  <Badge stato={r.stato} map={RICH_C}/>
-                </div>
-                <div style={{padding:"12px 16px"}}>
-                  <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-                    <span style={{background:r.contratto==="affitto"?"#2e1a47":"#1e3a5f",color:r.contratto==="affitto"?"#c084fc":"#93c5fd",padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:700}}>{r.contratto.toUpperCase()}</span>
-                    {r.tipo&&<span style={{background:"#1e2a1e",color:"#4ade80",padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:700}}>{TIPO_ICON[r.tipo]} {r.tipo}</span>}
-                  </div>
-                  <div style={{background:"#162032",borderRadius:8,padding:"10px 12px",marginBottom:10}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                      <div><span style={{color:"#64748b",fontSize:11}}>Budget max</span><div style={{color:"#fbbf24",fontWeight:700}}>€ {Number(r.budget_max).toLocaleString("it-IT")}</div></div>
-                      {r.mq_min>0&&<div><span style={{color:"#64748b",fontSize:11}}>Sup. min</span><div style={{color:"#e2e8f0",fontWeight:600}}>{r.mq_min} mq</div></div>}
-                      {r.locali_min>0&&<div><span style={{color:"#64748b",fontSize:11}}>Locali min</span><div style={{color:"#e2e8f0",fontWeight:600}}>{r.locali_min}</div></div>}
-                    </div>
-                  </div>
-                  {r.zone?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>{r.zone.map(z=><span key={z} style={{background:"#1e293b",border:"1px solid #334155",color:"#94a3b8",padding:"2px 8px",borderRadius:999,fontSize:11}}>📍 {z}</span>)}</div>}
-                  {r.agente&&<div style={{fontSize:12,color:"#64748b",marginBottom:6}}>🧑‍💼 {r.agente}</div>}
-                  {r.note&&<div style={{fontSize:11,color:"#475569",background:"#162032",borderRadius:6,padding:"6px 10px",marginBottom:10}}>📝 {r.note}</div>}
-                  <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                    <button onClick={(e)=>{e.stopPropagation();setModal(r)}} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>✏️ Modifica</button>
-                    <button onClick={(e)=>{e.stopPropagation();elimina(r.id)}} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #4b1818",background:"none",color:"#f87171",fontSize:12,cursor:"pointer"}}>🗑 Elimina</button>
-                  </div>
-                </div>
-              </div>
-            );})}
+          {/* Intestazione colonne */}
+          <div style={{display:"grid",gridTemplateColumns:"28px 1fr 90px 90px 130px 110px 90px 24px",gap:8,padding:"6px 12px",marginBottom:4,borderBottom:"1px solid #1e293b"}}>
+            {["","Cliente","Contratto","Tipo","Budget","Stato","Agente",""].map((h,i)=>(
+              <div key={i} style={{fontSize:11,color:"#475569",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px"}}>{h}</div>
+            ))}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:2}}>
+            {filtered.map(r=>(
+              <RigaRichiesta key={r.id} r={r} sel={selezione.has(r.id)}
+                onToggleSel={e=>toggleSel(r.id,e)}
+                onDettaglio={()=>setDettaglio(r)}
+                onModifica={()=>setModal(r)}
+                onElimina={()=>elimina(r.id)}
+              />
+            ))}
           </div>
         </>
       )}
@@ -1475,7 +1505,8 @@ function SezioneRichieste({ onMatch }) {
 
 // ─── SEZIONE MATCH ────────────────────────────────────────────────────────────
 function calcolaScore(imm, rich) {
-  if (imm.contratto !== rich.contratto) return 0;
+  const contrattoOk = imm.contratto === rich.contratto || (imm.contratto === "vendita" && rich.contratto === "acquisto");
+  if (!contrattoOk) return 0;
   let s = 15;
   if (Number(imm.prezzo) <= Number(rich.budget_max) && Number(imm.prezzo) >= Number(rich.budget_min||0)) s += 25;
   else if (Number(imm.prezzo) <= Number(rich.budget_max) * 1.1) s += 10;
@@ -1625,7 +1656,7 @@ function SezioneMatch({ initial, onConsumeInitial }) {
                   {r.telefono && <div style={{fontSize:12,color:"#64748b",marginBottom:2}}>📞 {r.telefono}</div>}
                   {r.data_richiesta && <div style={{fontSize:12,color:"#64748b",marginBottom:4}}>📅 {new Date(r.data_richiesta).toLocaleDateString("it-IT")}</div>}
                   <div style={{display:"flex",gap:5,flexWrap:"wrap",margin:"6px 0"}}>
-                    <span style={{background:r.contratto==="affitto"?"#2e1a47":"#1e3a5f",color:r.contratto==="affitto"?"#c084fc":"#93c5fd",padding:"2px 8px",borderRadius:999,fontSize:11,fontWeight:700}}>{r.contratto.toUpperCase()}</span>
+                    <span style={{background:r.contratto==="affitto"?"#2e1a47":"#1e3a5f",color:r.contratto==="affitto"?"#c084fc":"#93c5fd",padding:"2px 8px",borderRadius:999,fontSize:11,fontWeight:700}}>{r.contratto==="acquisto"?"ACQUISTO":r.contratto==="affitto"?"AFFITTO":r.contratto.toUpperCase()}</span>
                     {r.tipo && <span style={{background:"#1e2a1e",color:"#4ade80",padding:"2px 8px",borderRadius:999,fontSize:11,fontWeight:700}}>{r.tipo}</span>}
                   </div>
                   <div style={{fontSize:12,color:"#64748b"}}>
@@ -1764,6 +1795,7 @@ export default function App() {
   const [session, setSession] = useState(() => getStoredSession());
   const [tab, setTab] = useState("immobili");
   const [matchInitial, setMatchInitial] = useState(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   // Contatori header (caricati una volta) — hook PRIMA del return condizionale
   const [counts, setCounts] = useState({ disp:0, rich:0, nuovi:0 });
@@ -1829,13 +1861,43 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div style={{display:"flex",gap:4,marginTop:12}}>
+          <div style={{display:"flex",gap:4,marginTop:12,alignItems:"center"}}>
             {tabs.map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"10px 20px",background:"none",border:"none",cursor:"pointer",fontSize:14,fontWeight:600,color:tab===t.id?t.col:"#64748b",borderBottom:tab===t.id?`2px solid ${t.col}`:"2px solid transparent",transition:"all .2s"}}>
                 {t.label}
               </button>
             ))}
+            <div style={{flex:1}}/>
+            <button onClick={()=>setShowInfo(true)} style={{padding:"6px 14px",borderRadius:8,border:"1px solid #334155",background:"none",color:"#64748b",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+              ℹ️ Info azienda
+            </button>
           </div>
+
+          {showInfo && (
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowInfo(false)}>
+              <div style={{background:"#0f172a",border:"1px solid #1e3a5f",borderRadius:16,padding:32,maxWidth:520,width:"100%",position:"relative"}} onClick={e=>e.stopPropagation()}>
+                <button onClick={()=>setShowInfo(false)} style={{position:"absolute",top:16,right:16,background:"none",border:"none",color:"#64748b",fontSize:20,cursor:"pointer",lineHeight:1}}>✕</button>
+                <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:24}}>
+                  <img src="/logo.png" alt="Logo" style={{height:56,width:"auto"}}/>
+                  <div>
+                    <div style={{fontSize:18,fontWeight:900,color:"#f1f5f9"}}>IMMOBILIARE 3.0</div>
+                    <div style={{fontSize:13,color:"#64748b"}}>di Fabiana Miranda</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:10,fontSize:13,color:"#94a3b8",lineHeight:1.7}}>
+                  <div>📍 Viale I Maggio, 17/A<br/>31048 Olmi di San Biagio di Callalta (TV)</div>
+                  <div>📞 <a href="tel:3515463729" style={{color:"#60a5fa",textDecoration:"none"}}>351 5463729</a></div>
+                  <div>✉️ <a href="mailto:info@immobiliare3-0.com" style={{color:"#60a5fa",textDecoration:"none"}}>info@immobiliare3-0.com</a></div>
+                  <div>🌐 <a href="https://www.immobiliare3-0.com" target="_blank" rel="noopener noreferrer" style={{color:"#60a5fa",textDecoration:"none"}}>www.immobiliare3-0.com</a></div>
+                  <div style={{borderTop:"1px solid #1e293b",paddingTop:12,fontSize:11,color:"#475569",lineHeight:1.8}}>
+                    C.F. MRNFBN83D63L407W · P. IVA 05462230268<br/>
+                    Iscritta dal 26/01/2024 nell'ex Ruolo degli Agenti di Affari in Mediazione della C.C.I.A.A. di Treviso, ai sensi del D.Lgs. n. 59/10 e della L. n. 122/10, al n. <strong style={{color:"#64748b"}}>TV-445862</strong>.<br/>
+                    Registro Imprese/REA della Camera di Commercio di Treviso, dal 26/02/2024.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div style={{maxWidth:1200,margin:"0 auto",padding:28}}>
