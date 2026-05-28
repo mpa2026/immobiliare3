@@ -163,12 +163,23 @@ function excelDateToISO(v) {
   return null;
 }
 
+function normalizzaContratto(v) {
+  if (!v) return "acquisto";
+  const s = String(v).toLowerCase().trim();
+  if (s.includes("affitto") && s.includes("acquisto")) return "acquisto"; // ACQUISTO/AFFITTO → acquisto
+  if (s === "affitto") return "affitto";
+  if (s === "vendita") return "acquisto"; // vecchio valore → acquisto
+  return "acquisto"; // default
+}
+
 function csvRowToRichiesta(r) {
   const num = v => v !== "" && v != null ? Number(v) : null;
   return {
     cliente_label: r.cliente_label || "", telefono: r.telefono || null,
-    email: r.email || null, contratto: r.contratto || "acquisto",
-    tipo: r.tipo || null, stato: r.stato || "nuovo_contatto",
+    email: r.email || null,
+    contratto: normalizzaContratto(r.contratto),
+    tipo: r.tipo ? r.tipo.toLowerCase().trim() : null,
+    stato: r.stato || "nuovo_contatto",
     budget_min: Number(r.budget_min) || 0, budget_max: Number(r.budget_max) || 0,
     mq_min: num(r.mq_min), locali_min: num(r.locali_min),
     zone: r.zone ? r.zone.split(";").map(z => z.trim()).filter(Boolean) : [],
