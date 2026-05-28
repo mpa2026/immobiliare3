@@ -1387,6 +1387,15 @@ function SezioneRichieste({ onMatch }) {
     } catch(e) { setErrore(e.message); }
   };
 
+  const cambiaStatoSelezionati = async (nuovoStato) => {
+    if (!nuovoStato) return;
+    try {
+      await Promise.all([...selezione].map(id => db.update("richieste", { stato: nuovoStato }, id)));
+      setRichieste(p => p.map(r => selezione.has(r.id) ? { ...r, stato: nuovoStato } : r));
+      setSelezione(new Set());
+    } catch(e) { setErrore(e.message); }
+  };
+
   const handleExport = () => {
     const date = new Date().toISOString().slice(0,10);
     exportXLSX(richieste, RICHIESTE_COLS, `richieste_${date}.xlsx`);
@@ -1457,7 +1466,7 @@ function SezioneRichieste({ onMatch }) {
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Cerca cliente o telefono…" style={{...inp,flex:1,minWidth:200}}/>
         <select value={fContr} onChange={e=>setFContr(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti i contratti</option><option value="acquisto">Acquisto</option><option value="affitto">Affitto</option></select>
         <select value={fTipo} onChange={e=>setFTipo(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti i tipi</option>{[["appartamento","Appartamento"],["villa","Villa"],["bifamiliare","Bifamiliare"],["trifamiliare","Trifamiliare"],["schiera","A schiera"],["ufficio","Ufficio"],["negozio","Negozio"],["capannone","Capannone"],["terreno","Terreno"],["intero_edificio","Intero edificio"],["altro","Altro"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
-        {comuniRich.length>0 && <select value={fComune} onChange={e=>setFComune(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutte le zone</option>{comuniRich.map(c=><option key={c} value={c}>{c}</option>)}</select>}
+        {comuniRich.length>0 && <select value={fComune} onChange={e=>setFComune(e.target.value)} style={{...sel,width:"auto",maxWidth:160}}><option value="tutti">Tutte le zone</option>{comuniRich.map(c=><option key={c} value={c}>{c}</option>)}</select>}
         <select value={fStato} onChange={e=>setFStato(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti gli stati</option><option value="nuovo_contatto">Nuovo contatto</option><option value="in_valutazione">In valutazione</option><option value="proposta_fatta">Proposta fatta</option><option value="chiuso">Chiuso</option></select>
         {agentiRich.length>0 && <select value={fAgente} onChange={e=>setFAgente(e.target.value)} style={{...sel,width:"auto"}}><option value="tutti">Tutti gli agenti</option>{agentiRich.map(a=><option key={a} value={a}>{a}</option>)}</select>}
         <div style={{display:"flex",alignItems:"center",gap:6,background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"0 10px",height:38}}>
@@ -1479,6 +1488,14 @@ function SezioneRichieste({ onMatch }) {
               <span style={{fontSize:12,color:"#93c5fd",fontWeight:600}}>{selezione.size} selezionate</span>
               <button onClick={selTutti} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",cursor:"pointer"}}>Seleziona tutte</button>
               <button onClick={deselTutti} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",cursor:"pointer"}}>Deseleziona tutte</button>
+              <select defaultValue="" onChange={e=>cambiaStatoSelezionati(e.target.value)}
+                style={{...sel,fontSize:12,padding:"3px 10px",height:"auto",background:"#1e3a5f",color:"#93c5fd",border:"1px solid #2563eb",borderRadius:6,cursor:"pointer",fontWeight:600}}>
+                <option value="" disabled>🔄 Cambia stato…</option>
+                <option value="nuovo_contatto">Nuovo contatto</option>
+                <option value="in_valutazione">In valutazione</option>
+                <option value="proposta_fatta">Proposta fatta</option>
+                <option value="chiuso">Chiuso</option>
+              </select>
               <button onClick={eliminaSelezionati} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"1px solid #7f1d1d",background:"#3b1515",color:"#f87171",cursor:"pointer",fontWeight:700}}>🗑 Elimina selezionate ({selezione.size})</button>
             </>}
           </div>
@@ -1518,7 +1535,7 @@ function SezioneRichieste({ onMatch }) {
 function calcolaScore(imm, rich) {
   const contrattoOk = imm.contratto === rich.contratto || (imm.contratto === "vendita" && rich.contratto === "acquisto");
   if (!contrattoOk) return 0;
-  let s = 15;
+  let s = 5;
   if (Number(imm.prezzo) <= Number(rich.budget_max) && Number(imm.prezzo) >= Number(rich.budget_min||0)) s += 25;
   else if (Number(imm.prezzo) <= Number(rich.budget_max) * 1.1) s += 10;
   if (!rich.tipo || rich.tipo === imm.tipo) s += 20;
@@ -1527,6 +1544,14 @@ function calcolaScore(imm, rich) {
   if (!rich.bagni_min || Number(imm.bagni) >= Number(rich.bagni_min)) s += 7;
   if (rich.ascensore == null || rich.ascensore === imm.ascensore) s += 5;
   if (!rich.garage_min || Number(imm.garage) >= Number(rich.garage_min)) s += 5;
+  // Zona: confronto tra zone richiesta e comune/indirizzo immobile
+  if (!rich.zone || rich.zone.length === 0) {
+    s += 10; // nessuna preferenza di zona → punti pieni
+  } else {
+    const target = ((imm.comune||"") + " " + (imm.indirizzo||"")).toLowerCase();
+    const match = rich.zone.some(z => target.includes(z.toLowerCase().trim()));
+    if (match) s += 10;
+  }
   return Math.min(s, 100);
 }
 
