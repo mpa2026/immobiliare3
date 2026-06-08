@@ -1002,10 +1002,11 @@ function SezioneImmobili({ onMatch }) {
 
   const sorted = sortBy ? [...filtered].sort((a, b) => {
     let va, vb;
-    if (sortBy === "prezzo")  { va = Number(a.prezzo)||0;  vb = Number(b.prezzo)||0; }
-    if (sortBy === "mq")      { va = Number(a.mq)||0;      vb = Number(b.mq)||0; }
-    if (sortBy === "locali")  { va = Number(a.locali)||0;  vb = Number(b.locali)||0; }
-    if (sortBy === "comune")  { va = (a.comune||"").toLowerCase(); vb = (b.comune||"").toLowerCase(); }
+    if (sortBy === "prezzo")     { va = Number(a.prezzo)||0;  vb = Number(b.prezzo)||0; }
+    if (sortBy === "mq")         { va = Number(a.mq)||0;      vb = Number(b.mq)||0; }
+    if (sortBy === "locali")     { va = Number(a.locali)||0;  vb = Number(b.locali)||0; }
+    if (sortBy === "comune")     { va = (a.comune||"").toLowerCase(); vb = (b.comune||"").toLowerCase(); }
+    if (sortBy === "updated_at") { va = a.updated_at||""; vb = b.updated_at||""; }
     if (va < vb) return sortDir === "asc" ? -1 : 1;
     if (va > vb) return sortDir === "asc" ? 1 : -1;
     return 0;
@@ -1145,6 +1146,7 @@ function SezioneImmobili({ onMatch }) {
             <option value="mq">Dimensione</option>
             <option value="locali">N° locali</option>
             <option value="comune">Comune</option>
+            <option value="updated_at">Ultima modifica</option>
           </select>
           {sortBy && (
             <button onClick={()=>setSortDir(d=>d==="asc"?"desc":"asc")} title={sortDir==="asc"?"Crescente":"Decrescente"}
@@ -1214,6 +1216,7 @@ function SezioneImmobili({ onMatch }) {
                     {imm.proprietario_label&&<div style={{fontSize:12,color:"#64748b",marginBottom:4}}>👤 {imm.proprietario_label}</div>}
                     {imm.agente&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>🧑‍💼 {imm.agente}</div>}
                     {imm.note_interne&&<div style={{fontSize:11,color:"#475569",background:"#162032",borderRadius:6,padding:"6px 10px",marginBottom:10}}>📝 {imm.note_interne}</div>}
+                    {imm.updated_at&&<div style={{fontSize:10,color:"#334155",marginBottom:8}}>🕐 Modificato: {new Date(imm.updated_at).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>}
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                       {imm.link_annuncio && <a href={imm.link_annuncio} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #065f46",background:"none",color:"#34d399",fontSize:12,cursor:"pointer",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>🏠 Annuncio</a>}
                       <div style={{flex:1}}/>
@@ -1283,6 +1286,7 @@ function RigaRichiesta({ r, sel, onToggleSel, onDettaglio, onModifica, onElimina
           </div>
           {r.zone?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>{r.zone.map(z=><span key={z} style={{background:"#1e293b",border:"1px solid #334155",color:"#94a3b8",padding:"2px 8px",borderRadius:999,fontSize:11}}>📍 {z}</span>)}</div>}
           {r.note&&<div style={{fontSize:12,color:"#94a3b8",background:"#1e293b",borderRadius:6,padding:"8px 12px",marginBottom:10}}>📝 {r.note}</div>}
+          {r.updated_at&&<div style={{fontSize:10,color:"#334155",marginBottom:8}}>🕐 Modificato: {new Date(r.updated_at).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>}
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
             <button onClick={e=>{e.stopPropagation();onDettaglio();}} style={{padding:"5px 12px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>🔍 Dettaglio</button>
             <button onClick={e=>{e.stopPropagation();onModifica();}} style={{padding:"5px 12px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>✏️ Modifica</button>
@@ -1835,6 +1839,7 @@ export default function App() {
 
   // Contatori header (caricati una volta) — hook PRIMA del return condizionale
   const [counts, setCounts] = useState({ disp:0, rich:0, nuovi:0 });
+  const [lastMod, setLastMod] = useState({ imm:null, rich:null });
   useEffect(() => {
     if (!session) return;
     Promise.all([
@@ -1848,6 +1853,9 @@ export default function App() {
         rich:  richArr.length,
         nuovi: richArr.filter(r=>r.stato==="nuovo_contatto").length,
       });
+      const latestImm  = immArr.map(i=>i.updated_at).filter(Boolean).sort().at(-1);
+      const latestRich = richArr.map(r=>r.updated_at).filter(Boolean).sort().at(-1);
+      setLastMod({ imm: latestImm||null, rich: latestRich||null });
     });
   }, [session, tab]);
 
@@ -1891,6 +1899,19 @@ export default function App() {
                   <div style={{fontSize:10,color:"#475569"}}>{l}</div>
                 </div>
               ))}
+              <div style={{width:"1px",height:36,background:"#1e3a5f"}}/>
+              {lastMod.imm && (
+                <div style={{textAlign:"center"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#4ade80"}}>🏠 {new Date(lastMod.imm).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>
+                  <div style={{fontSize:9,color:"#475569"}}>ult. modifica immobili</div>
+                </div>
+              )}
+              {lastMod.rich && (
+                <div style={{textAlign:"center"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#c084fc"}}>📋 {new Date(lastMod.rich).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>
+                  <div style={{fontSize:9,color:"#475569"}}>ult. modifica richieste</div>
+                </div>
+              )}
               <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,paddingLeft:16,borderLeft:"1px solid #1e3a5f"}}>
                 <span style={{fontSize:11,color:"#475569"}}>👤 {session.email}</span>
                 <button onClick={logout} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #334155",background:"none",color:"#64748b",cursor:"pointer",fontSize:11,fontWeight:600}}>Esci</button>
